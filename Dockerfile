@@ -1,42 +1,68 @@
-FROM php:7.3.12-fpm
+FROM centos:latest
 
-MAINTAINER The Easyswoole Dev <itzcy@itzcy.com>
+LABEL maintainer="The Easyswoole Dev <itzcy@itzcy.com>"
 
 WORKDIR /app
+# 安装常用软件
+RUN yum install -y curl wget zip zlib openssl make openssl-devel gcc glibc-headers gcc-c++ libxml2 libxml2-devel libpng libpng-devel libzip libzip-devel autoconf \
+ && yum clean all
 
-# 安装基础软件
-RUN git --version
+# 安装PHP7.3.12 配置PHP7.3.12
+RUN wget -O /app/php-7.3.12.tar.gz https://www.php.net/distributions/php-7.3.12.tar.gz \
+ && tar zxvf php-7.3.12.tar.gz \
+ && cd php-7.3.12 \
+ && ./configure --prefix=/usr/local/php \ 
+   --with-config-file-path=/usr/local/php/etc \
+   --enable-bcmath \
+   --enable-mbstring \
+   --with-gd \
+   --with-openssl \
+   --with-xmlrpc \
+   --with-mysqli \
+   --with-pdo-mysql \
+   --enable-zip \
+   --without-pear \
+ && make -j4 \
+ && make install \
+ && mkdir /usr/local/php/etc/ \
+ && cp ./php.ini-development /usr/local/php/etc/php.ini \ 
+ && ln -s /usr/local/php/bin/php /usr/bin/php \
+ && ln -s /usr/local/php/bin/php-config /usr/bin/php-config \
+ && ln -s /usr/local/php/bin/phpize /usr/bin/phpize \
+ && rm -rf /app/* \
+ && php -v
 
 # 安装composer
 RUN php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" \
  && php -r "echo hash_file('sha384', 'composer-setup.php') . PHP_EOL;" \
  && php composer-setup.php \
  && php -r "unlink('composer-setup.php');" \
- && mv composer.phar /usr/local/bin/composer \
+ && mv composer.phar /usr/local/php/bin/composer \
+ && ln -s /usr/local/php/bin/composer /usr/bin/composer \
  && rm -rf /app/*
 
 # 下载 编译安装 swoole 扩展
-RUN curl -L -o /app/swoole_4.4.12.tar.gz https://github.com/swoole/swoole-src/archive/v4.4.12.tar.gz \
+RUN wget -O /app/swoole_4.4.12.tar.gz  https://github.com/swoole/swoole-src/archive/v4.4.12.tar.gz \
  && cd /app \
- && cp /usr/local/etc/php/php.ini-development /usr/local/etc/php/php.ini \ 
  && tar zxvf swoole_4.4.12.tar.gz \
  && cd swoole-src-4.4.12 \
  && phpize \
- && ./configure --with-php-config=/usr/local/bin/php-config \
+ && ./configure --with-php-config=/usr/bin/php-config \
     --enable-coroutine \
     --enable-http2  \
     --enable-async-redis \
     --enable-mysqlnd \
- && make && make install \
- && echo "extension=/usr/local/lib/php/extensions/no-debug-non-zts-20180731/swoole.so" >> /usr/local/etc/php/php.ini \
+ && make -j4 \
+ && make install \
+ && echo "extension=/usr/local/php/lib/php/extensions/no-debug-non-zts-20180731/swoole.so" >> /usr/local/php/etc/php.ini \
  && php -m \
  && rm -rf /app/*
 
-# 安装easyswoole
-RUN /usr/local/bin/composer config -g repo.packagist composer https://mirrors.aliyun.com/composer/ && /usr/local/bin/composer require easyswoole/easyswoole && php vendor/easyswoole/easyswoole/bin/easyswoole install
-
 VOLUME ["/app"]
 
-EXPOSE 9051
+EXPOSE 9501
 
-CMD ["php", "/app/easyswoole", "start"]
+# 初始化easyswoole或启动
+COPY ./init.sh /init.sh
+
+CMD bash /init.sh && php /app/easyswoole start
